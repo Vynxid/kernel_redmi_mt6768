@@ -1,4 +1,4 @@
-name: Redmi MT6768 Kernel Build (Clang r399163b)
+name: Kernel Build with aosp-clang r399163b
 
 on:
   push:
@@ -11,41 +11,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
+
+      - name: Checkout Clang Toolchain (r399163b)
+        uses: actions/checkout@v4
+        with:
+          repository: Nicklas373/aosp-clang
+          ref: r399163b
+          path: clang
+
+      - name: Add Clang to PATH
+        run: echo "${GITHUB_WORKSPACE}/clang/bin" >> $GITHUB_PATH
 
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y bc bison flex libssl-dev make gcc build-essential \
-            libncurses-dev curl wget cpio python3
-
-      - name: Download Clang r399163b Toolchain
-        run: |
-          mkdir -p $HOME/toolchains
-          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r399163b.tar.gz -O $HOME/toolchains/clang.tar.gz
-          tar -xf $HOME/toolchains/clang.tar.gz -C $HOME/toolchains
-          echo "PATH=$HOME/toolchains/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Set Environment
-        run: |
-          echo "ARCH=arm64" >> $GITHUB_ENV
-          echo "SUBARCH=arm64" >> $GITHUB_ENV
+          sudo apt install -y bc bison flex libssl-dev make gcc \
+            build-essential libncurses-dev curl cpio python3
 
       - name: Create Output Directory
         run: mkdir -p out
 
-      - name: Build Kernel
+      - name: Compile Kernel
         run: |
-          export PATH=$HOME/toolchains/bin:$PATH
+          export ARCH=arm64
+          export SUBARCH=arm64
           make O=out ARCH=arm64 lancelot_defconfig
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CLANG_TRIPLE=aarch64-linux-gnu-
-
-      - name: Upload Kernel Image
-        uses: actions/upload-artifact@v4
-        with:
-          name: Image
-          path: out/arch/arm64/boot/Image*
