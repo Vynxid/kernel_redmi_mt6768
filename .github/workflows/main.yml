@@ -34,11 +34,13 @@ jobs:
         run: mkdir -p out
 
       - name: Compile Kernel
-        run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          make O=out ARCH=arm64 lancelot_defconfig
-          make -j$(nproc) O=out ARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CLANG_TRIPLE=aarch64-linux-gnu-
+  run: |
+    sudo apt install -y gcc-arm-linux-gnueabi  # install compiler ARM32
+    export ARCH=arm64
+    export SUBARCH=arm64
+    make O=out ARCH=arm64 lancelot_defconfig
+    make -j$(nproc) O=out ARCH=arm64 \
+      CC=clang \
+      CROSS_COMPILE=aarch64-linux-gnu- \
+      CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+      CLANG_TRIPLE=aarch64-linux-gnu-
