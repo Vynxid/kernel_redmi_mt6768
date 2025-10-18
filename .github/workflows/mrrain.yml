@@ -21,7 +21,7 @@ jobs:
       CCACHE_MAXSIZE: "2G"
       CCACHE_HARDLINK: "true"
       KERNEL_DEFCONFIG: "lancelot_defconfig"
-      KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-elf- O=out"
+      KERNEL_CMDLINE: "ARCH=arm64 O=out CROSS_COMPILE=aarch64-elf- CROSS_COMPILE_ARM32=arm-eabi-"
 
     steps:
       - name: Checkout
@@ -39,9 +39,13 @@ jobs:
           sudo apt install aria2 binutils make python3 libssl-dev build-essential bc bison flex unzip \
               libssl-dev ca-certificates xz-utils mkbootimg cpio device-tree-compiler git git-lfs -y
 
-          # Clone EvaGCC toolchain
-          git clone --depth=1 https://github.com/Dhruvgera/EvaGCC-arm64.git toolchain
-          echo "PATH=$(pwd)/toolchain/bin:$PATH" >> $GITHUB_ENV
+          # Clone EvaGCC ARM64 toolchain
+          git clone --depth=1 https://github.com/Dhruvgera/EvaGCC-arm64.git toolchain64
+
+          # Clone EvaGCC ARM32 toolchain
+          git clone --depth=1 https://github.com/Dhruvgera/EvaGCC-arm.git toolchain32
+
+          echo "PATH=$(pwd)/toolchain64/bin:$(pwd)/toolchain32/bin:$PATH" >> $GITHUB_ENV
 
           # AnyKernel setup
           git clone https://github.com/osm0sis/AnyKernel3
@@ -56,7 +60,7 @@ jobs:
 
       - name: Build Kernel (EvaGCC)
         run: |
-          export PATH=$(pwd)/toolchain/bin:$PATH
+          export PATH=$(pwd)/toolchain64/bin:$(pwd)/toolchain32/bin:$PATH
           make $KERNEL_CMDLINE $KERNEL_DEFCONFIG
           make $KERNEL_CMDLINE -j$(nproc --all)
           ls -lh out/arch/arm64/boot/
