@@ -1,67 +1,147 @@
-name: Build Kernel (EvaGCC - Lancelot)
+name: Integrate KernelSU Non-GKI
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: "0 0 * * 6" # build otomatis tiap Sabtu
+    inputs:
+      defconfig:
+        description: 'Kernel Defconfig Name'
+        required: true
+        default: 'twisted_mi8_defconfig'
 
 jobs:
-  build:
+  integrate-kernelsu:
     runs-on: ubuntu-latest
-
-    env:
-      ARCH: arm64
-      SUBARCH: arm64
-      DEFCONFIG: lancelot_defconfig
-      TOOLCHAIN: EvaGCC-arm64
-      KERNEL_DIR: ${{ github.workspace }}/kernel
-      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
-
+    
+    permissions:
+      contents: write
+    
     steps:
-      - name: Checkout source
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
-
-      - name: Setup ccache
-        uses: actions/cache@v4
         with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache flex git \
-              libssl-dev make python3 python3-pip zip unzip curl
-
-      - name: Clone EvaGCC toolchain
-        run: |
-          git clone --depth=1 https://github.com/Dhruvgera/EvaGCC-arm64.git ${{ github.workspace }}/toolchain
-          echo "PATH=${{ github.workspace }}/toolchain/bin:$PATH" >> $GITHUB_ENV
-
-      - name: Prepare output folder
-        run: mkdir -p ${{ github.workspace }}/out
-
-      - name: Configure kernel
-        run: |
-          cd $KERNEL_DIR
-          make O=${{ github.workspace }}/out ARCH=$ARCH $DEFCONFIG CROSS_COMPILE=aarch64-elf-
-
-      - name: Build kernel
-        run: |
-          cd $KERNEL_DIR
-          make -j$(nproc) O=${{ github.workspace }}/out ARCH=$ARCH CROSS_COMPILE=aarch64-elf-
-          ls -lh ${{ github.workspace }}/out/arch/arm64/boot/
-
-      - name: Upload kernel artifact
-        uses: actions/upload-artifact@v4
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          name: Kernel-Output
-          path: |
-            out/arch/arm64/boot/Image.gz-dtb
-            out/arch/arm64/boot/dts/
-            out/.config
+          python-version: '3.x'
+      
+      - name: Download and Integrate KernelSU
+        run: |
+          echo "=========================================="
+          echo "Starting KernelSU Non-GKI Integration"
+          echo "=========================================="
+          
+          # Step 1: Download KernelSU setup script
+          echo ""
+          echo "📥 Step 1: Downloading KernelSU setup script..."
+          curl -LSs "https://raw.githubusercontent.com/mlm-games/KernelSU-Non-GKI/main/kernel/setup-subm.sh" | bash -s
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ KernelSU downloaded successfully"
+          else
+            echo "❌ Failed to download KernelSU"
+            exit 1
+          fi
+          
+          # Step 2: Run integration script
+          echo ""
+          echo "🔧 Step 2: Running integration script..."
+          if [ -f "KernelSU/scripts/integrate-no-kprobe.py" ]; then
+            python3 KernelSU/scripts/integrate-no-kprobe.py ${{ github.event.inputs.defconfig }}
+            
+            if [ $? -eq 0 ]; then
+              echo "✅ KernelSU integrated successfully"
+            else
+              echo "❌ Integration failed"
+              exit 1
+            fi
+          else
+            echo "❌ Integration script not found!"
+            exit 1
+          fi
+          
+          echo ""
+          echo "=========================================="
+          echo "Integration Complete!"
+          echo "=========================================="
+      
+      - name: Check Modified Files
+        run: |
+          echo ""
+          echo "📝 Checking modified files..."
+          echo "=========================================="
+          git status
+          echo ""
+          echo "📄 Changed files:"
+          git diff --name-only
+          echo ""
+          echo "📊 Summary of changes:"
+          git diff --stat
+      
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add all changes
+          git add .
+          
+          # Check if there are changes to commit
+          if git diff --cached --quiet; then
+            echo "⚠️  No changes to commit - KernelSU might already be integrated"
+            exit 0
+          fi
+          
+          # Create commit
+          git commit -m "🚀 Integrate KernelSU Non-GKI for ${{ github.event.inputs.defconfig }}
+
+          - Added KernelSU submodule/source
+          - Integrated using non-kprobe method  
+          - Modified defconfig: ${{ github.event.inputs.defconfig }}
+
+          This integration allows root management without kprobes.
+
+          Auto-generated by GitHub Actions
+          Workflow: ${{ github.workflow }}
+          Run: #${{ github.run_number }}"
+          
+          echo "✅ Changes committed"
+          
+          # Push changes
+          echo ""
+          echo "📤 Pushing changes to repository..."
+          git push
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Successfully pushed to GitHub!"
+          else
+            echo "❌ Failed to push changes"
+            exit 1
+          fi
+      
+      - name: Create Integration Summary
+        if: success()
+        run: |
+          echo "## ✅ KernelSU Integration Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 What was done:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ KernelSU Non-GKI downloaded and integrated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Defconfig \`${{ github.event.inputs.defconfig }}\` modified" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Changes committed and pushed to repository" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Changed Files:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          git log -1 --stat >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. ✅ Changes are now in your repository" >> $GITHUB_STEP_SUMMARY
+          echo "2. 🔨 Run your build workflow to compile the kernel" >> $GITHUB_STEP_SUMMARY
+          echo "3. 📱 Flash and test on your device" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Commit Details:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`$(git rev-parse --short HEAD)\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: \`$(git branch --show-current)\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Message**: $(git log -1 --pretty=%B | head -1)" >> $GITHUB_STEP_SUMMARY
