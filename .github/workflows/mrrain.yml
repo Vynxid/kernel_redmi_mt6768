@@ -1,0 +1,69 @@
+name: Build Kernel (4.9 - EvaGCC Lancelot)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 6"
+  push:
+    branches:
+      - HEAD
+  pull_request:
+    branches:
+      - HEAD
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_MAXSIZE: "2G"
+      CCACHE_HARDLINK: "true"
+      KERNEL_DEFCONFIG: "lancelot_defconfig"
+      KERNEL_CMDLINE: "ARCH=arm64 CROSS_COMPILE=aarch64-elf- O=out"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "true"
+          fetch-depth: 100
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y 
+          sudo apt install aria2 binutils make python3 libssl-dev build-essential bc bison flex unzip \
+              libssl-dev ca-certificates xz-utils mkbootimg cpio device-tree-compiler git git-lfs -y
+
+          # Clone EvaGCC toolchain
+          git clone --depth=1 https://github.com/Dhruvgera/EvaGCC-arm64.git toolchain
+          echo "PATH=$(pwd)/toolchain/bin:$PATH" >> $GITHUB_ENV
+
+          # AnyKernel setup
+          git clone https://github.com/osm0sis/AnyKernel3
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
+          sed -i 's!BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!BLOCK=auto;!g' AnyKernel3/anykernel.sh
+          sed -i 's/IS_SLOT_DEVICE=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
+          rm -rf AnyKernel3/.git* AnyKernel3/README.md
+
+      - name: GetTime
+        id: get_time
+        run: echo "TIME=$(TZ=UTC+3 date +%s )" >> $GITHUB_OUTPUT
+
+      - name: Build Kernel (EvaGCC)
+        run: |
+          export PATH=$(pwd)/toolchain/bin:$PATH
+          make $KERNEL_CMDLINE $KERNEL_DEFCONFIG
+          make $KERNEL_CMDLINE -j$(nproc --all)
+          ls -lh out/arch/arm64/boot/
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+
+      - name: Upload Kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lancelot_EvaGCC-${{ steps.get_time.outputs.TIME }}
+          path: "AnyKernel3/*"
